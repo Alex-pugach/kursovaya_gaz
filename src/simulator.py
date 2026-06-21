@@ -5,7 +5,9 @@ import pandas as pd
 
 
 class FieldSimulator:
-    """Главный класс. Собираем всё вместе"""
+    """
+    Главный класс. Собирает всю модель.
+    """
 
     def __init__(self, reservoir, wells, shlyf, dcs):
         self.reservoir = reservoir
@@ -14,7 +16,6 @@ class FieldSimulator:
         self.dcs = dcs
 
     def solve(self, P_res):
-        """ Находим рабочую точку """
         def system(x):
             q1, q2, q3, P_man = x
             q_ext = self.dcs.q_ext
@@ -28,19 +29,15 @@ class FieldSimulator:
                     P_bhp = state.P_out
                 else:
                     P_bhp = P_man
-
                 q_calc = well.q(P_res, P_bhp)
                 res.append(q - q_calc)
 
             q_total = q1 + q2 + q3 + q_ext
             shlyf_state = self.shlyf.dp(P_in_dcs, q_total)
-            P_man_calc = shlyf_state.P_out
-
-            res.append(P_man - P_man_calc)
+            res.append(P_man - shlyf_state.P_out)
             return res
 
         x0 = [500, 500, 500, 8.0]
-
         try:
             sol = fsolve(system, x0)
             q1, q2, q3, P_man = sol
@@ -52,7 +49,6 @@ class FieldSimulator:
         q3 = max(0, q3)
 
         states = {}
-
         for i, well in enumerate(self.wells):
             q = [q1, q2, q3][i]
             if well.pipe is not None:
@@ -85,10 +81,12 @@ class FieldSimulator:
         return states
 
     def run(self, N_days, dt=1.0):
-        """ Считаем динамику """
         P_res = self.reservoir.resprops.P
         results = []
         Gp = 0.0
+
+        # === Запасы газа ===
+        G_init = 10_000
 
         for day in range(N_days):
             states = self.solve(P_res)
@@ -100,8 +98,10 @@ class FieldSimulator:
 
             P_man = states['shlyf'].P_in
 
-            P_res_new = self.reservoir.p2(q_total, dt)
-            Gp += q_total * dt / 1000
+            dG = q_total * dt / 1_000_000
+            Gp += dG
+            P_res_new = P_res * (1 - Gp / G_init)
+            P_res_new = max(5.0, P_res_new)
 
             results.append({
                 't': day,

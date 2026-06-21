@@ -1,34 +1,40 @@
 class ResProps:
-    """ Свойства пласта  """
+    """Просто храним свойства пласта"""
     def __init__(self, P, V, T):
-        self.P = P      # текущее пластовое давление, атм
-        self.V = V      # объём пласта, м³
-        self.T = T      # температура, К
+        self.P = P
+        self.V = V
+        self.T = T
 
 
 class Reservoir:
-    """ Модель пласта, отвечает за материальный баланс """
+    """
+    Модель пласта.
+    Давление падает линейно от накопленной добычи.
+    """
 
     def __init__(self, resprops, fluid):
         self.resprops = resprops
         self.fluid = fluid
+        # Начальные запасы газа (примерно)
+        self.G_init = resprops.V * 0.6 / 1000000   # млн м³
 
     def p2(self, q_total, dt=1.0):
-        """ Новое пластовое давление после шага dt (сутки)
-        при суммарном дебите q_total (ст.м³/сут) """
+        """
+        Новое давление после шага добычи
+        """
         P = self.resprops.P
 
-        if P <= 0 or q_total <= 0:
-            return P
+        if P <= 5:
+            return 5.0
 
-        Z = self.fluid.z(P)
-        rho_res = self.fluid.ro(P)
+        # Накопленная добыча за шаг (млн м³)
+        dG = q_total * dt / 1_000_000
 
-        # Плотность при стандартных условиях (примерно)
-        rho_std = 101325 * self.fluid.M / (8.314 * 293.15)
+        # Простая линейная модель
+        Gp = getattr(self, 'Gp', 0) + dG
+        self.Gp = Gp
 
-        # Формула материального баланса
-        dP = (Z * rho_std / rho_res) * (q_total / self.resprops.V) * dt
+        # Давление падает пропорционально добыче
+        P_new = self.resprops.P * (1 - Gp / self.G_init)
 
-        P_new = P - dP
-        return max(5.0, P_new)   # не даём давлению упасть ниже 5 атм
+        return max(5.0, P_new)
